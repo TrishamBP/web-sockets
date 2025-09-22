@@ -1,29 +1,62 @@
-import socket
+import asyncio
 
 HEADERSIZE = 10
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+class WebSocketClient:
+    def __init__(self, host='localhost', port=1234):
+        self.host = host
+        self.port = port
 
-# Connect to the server on the same machine
-s.connect((socket.gethostname(), 1234))
-# Connect to a server on a different machine
-# s.connect(('<server_ip_address>', 1234))
+    async def receive_message(self, reader):
+        try:
+            while True:
+                # Read header first
+                header = await reader.read(HEADERSIZE)
+                if not header:
+                    break
+                
+                msglen = int(header.decode('utf-8').strip())
+                
+                # Read the actual message
+                full_msg = ''
+                remaining = msglen
+                
+                while remaining > 0:
+                    chunk = await reader.read(min(remaining, 1024))
+                    if not chunk:
+                        break
+                    full_msg += chunk.decode('utf-8')
+                    remaining -= len(chunk)
+                
+                if full_msg:
+                    print("Full message received:")
+                    print(full_msg)
+                
+        except ConnectionResetError:
+            print("Server disconnected")
+        except Exception as e:
+            print(f"Error receiving message: {e}")
 
-while True:
-    full_msg = ''
-    new_msg = True
-    while True:
+    async def connect(self):
+        try:
+            reader, writer = await asyncio.open_connection(self.host, self.port)
+            print(f"Connected to {self.host}:{self.port}")
+            
+            await self.receive_message(reader)
+            
+        except ConnectionRefusedError:
+            print(f"Failed to connect to {self.host}:{self.port}")
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            if 'writer' in locals():
+                writer.close()
+                await writer.wait_closed()
 
-        msg = s.recv(16) # Buffer size is 1024 bytes
-        if new_msg:
-            print(f"New message length: {msg[:HEADERSIZE]}")
-            msglen = int(msg[:HEADERSIZE])
-            new_msg = False
-        full_msg += msg.decode("utf-8")
+async def main():
+    client = WebSocketClient()
+    await client.connect()
 
-        if len(full_msg)-HEADERSIZE == msglen:
-            print("Full message received")
-            print(full_msg[HEADERSIZE:])
-            new_msg = True
-            full_msg = ''
+if __name__ == "__main__":
+    asyncio.run(main())
         
